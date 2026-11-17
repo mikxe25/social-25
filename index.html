@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor příspěvků</title>
+<style>
+:root{--bg:#f3f5f7;--card:#fff;--ink:#14213d;--mute:#6b7685;--line:#dde2e8;--acc:#1b6ef3;--ok:#1a8f5a;--err:#c93a3a}
+@media (prefers-color-scheme:dark){:root{--bg:#10141a;--card:#1a2029;--ink:#eef1f5;--mute:#8b96a5;--line:#2b3440;--acc:#4d8dff;--ok:#3fbf86;--err:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,sans-serif;padding:16px;max-width:560px;margin:auto}
+h1{font-size:20px;margin:4px 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+label.f{display:block;font-size:14px;color:var(--mute);margin-bottom:6px}
+input[type=password],textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:inherit}
+textarea{min-height:110px;resize:vertical}
+button{font:inherit;border:0;border-radius:8px;padding:11px 16px;background:var(--acc);color:#fff;cursor:pointer}
+button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.seg button{border-radius:0}.seg button:first-child{border-radius:8px 0 0 8px}.seg button:last-child{border-radius:0 8px 8px 0}
+.seg button:not(.on){background:transparent;color:var(--ink);border:1px solid var(--line)}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+.thumb{flex:0 0 auto;width:150px;scroll-snap-align:start;position:relative}
+.thumb canvas{width:100%;display:block;border-radius:8px;background:#000}
+.thumb .ctl{display:flex;gap:4px;margin-top:4px}
+.thumb .ctl button{padding:4px 0;flex:1;font-size:14px}
+.chk{display:flex;gap:16px;margin:8px 0}
+.chk label{display:flex;gap:6px;align-items:center}
+#status div{padding:6px 0}
+.ok{color:var(--ok)}.er{color:var(--err)}
+.count{font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<h1>Nový příspěvek</h1>
+
+<div class="card" id="loginCard">
+  <label class="f">Heslo</label>
+  <input type="password" id="pw" autocomplete="current-password">
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+    <div class="seg row" style="gap:0">
+      <button id="r45" class="on">4:5</button><button id="r11">1:1</button>
+    </div>
+    <button class="sec" id="add">+ Fotky</button>
+  </div>
+  <input type="file" id="file" accept="image/*" multiple hidden>
+  <div class="thumbs" id="thumbs"></div>
+  <div class="count" id="count">0 / 10 fotek</div>
+</div>
+
+<div class="card">
+  <label class="f">Text příspěvku</label>
+  <textarea id="cap"></textarea>
+  <div class="chk">
+    <label><input type="checkbox" id="fb" checked> Facebook</label>
+    <label><input type="checkbox" id="ig" checked> Instagram</label>
+  </div>
+  <button id="pub" style="width:100%">Publikovat</button>
+  <div id="status"></div>
+</div>
+
+<script>
+const W = 1080;
+let ratio = 4/5, items = [];
+const $ = id => document.getElementById(id);
+$('pw').value = localStorage.getItem('pw') || '';
+$('pw').oninput = e => localStorage.setItem('pw', e.target.value);
+
+$('add').onclick = () => $('file').click();
+$('r45').onclick = () => setRatio(4/5);
+$('r11').onclick = () => setRatio(1);
+function setRatio(r){ ratio=r; $('r45').classList.toggle('on',r!==1); $('r11').classList.toggle('on',r===1); render(); }
+setRatio(4/5);
+
+$('file').onchange = async e => {
+  for (const f of e.target.files) {
+    if (items.length >= 10) break;
+    const img = await loadImg(f);
+    items.push({ img, name: f.name.replace(/\W+/g,'_').slice(0,30), zoom: 1, ox: 0, oy: 0 });
+  }
+  e.target.value = '';
+  render();
+};
+function loadImg(f){ return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = URL.createObjectURL(f); }); }
+
+function draw(it, cv, w){
+  const h = Math.round(w / ratio);
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#000'; c.fillRect(0,0,w,h);
+  const base = Math.max(w / it.img.width, h / it.img.height);
+  const s = base * it.zoom;
+  const dw = it.img.width * s, dh = it.img.height * s;
+  const mx = Math.max(0,(dw-w)/2), my = Math.max(0,(dh-h)/2);
+  const x = (w-dw)/2 + it.ox*mx, y = (h-dh)/2 + it.oy*my;
+  c.drawImage(it.img, x, y, dw, dh);
+}
+
+function render(){
+  const box = $('thumbs'); box.innerHTML = '';
+  items.forEach((it, i) => {
+    const d = document.createElement('div'); d.className = 'thumb';
+    const cv = document.createElement('canvas'); draw(it, cv, 300);
+    let drag = null;
+    cv.style.touchAction = 'none';
+    cv.onpointerdown = e => { drag = {x:e.clientX,y:e.clientY,ox:it.ox,oy:it.oy}; cv.setPointerCapture(e.pointerId); };
+    cv.onpointermove = e => { if(!drag) return; const r = cv.getBoundingClientRect();
+      it.ox = Math.max(-1,Math.min(1,drag.ox - (e.clientX-drag.x)/(r.width/2)));
+      it.oy = Math.max(-1,Math.min(1,drag.oy - (e.clientY-drag.y)/(r.height/2)));
+      draw(it, cv, 300); };
+    cv.onpointerup = () => drag = null;
+    const ctl = document.createElement('div'); ctl.className = 'ctl';
+    const mk = (t, fn) => { const b = document.createElement('button'); b.className='sec'; b.textContent=t; b.onclick=fn; return b; };
+    ctl.append(
+      mk('◀', () => { if(i>0){ [items[i-1],items[i]]=[items[i],items[i-1]]; render(); } }),
+      mk('−', () => { it.zoom = Math.max(1, it.zoom-0.15); draw(it,cv,300); }),
+      mk('+', () => { it.zoom = Math.min(3, it.zoom+0.15); draw(it,cv,300); }),
+      mk('▶', () => { if(i<items.length-1){ [items[i+1],items[i]]=[items[i],items[i+1]]; render(); } }),
+      mk('✕', () => { items.splice(i,1); render(); })
+    );
+    d.append(cv, ctl); box.append(d);
+  });
+  $('count').textContent = items.length + ' / 10 fotek';
+}
+
+function status(msg, cls){ const d = document.createElement('div'); d.textContent = msg; if(cls) d.className = cls; $('status').append(d); }
+
+$('pub').onclick = async () => {
+  if (!items.length) return alert('Přidej aspoň jednu fotku');
+  if (!$('fb').checked && !$('ig').checked) return alert('Vyber aspoň jednu platformu');
+  const pw = $('pw').value;
+  $('pub').disabled = true; $('status').innerHTML = '';
+  try {
+    const urls = [];
+    for (let i = 0; i < items.length; i++) {
+      status(`Nahrávám fotku ${i+1}/${items.length}…`);
+      const cv = document.createElement('canvas'); draw(items[i], cv, W);
+      const dataUrl = cv.toDataURL('image/jpeg', 0.88);
+      const r = await fetch('/api/upload', { method:'POST', headers:{'Content-Type':'application/json','x-password':pw}, body: JSON.stringify({dataUrl, name: items[i].name}) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error);
+      urls.push(j.url);
+    }
+    status('Publikuji…');
+    const r = await fetch('/api/publish', { method:'POST', headers:{'Content-Type':'application/json','x-password':pw}, body: JSON.stringify({urls, caption:$('cap').value, facebook:$('fb').checked, instagram:$('ig').checked}) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    if (j.instagram) status('Instagram: ' + (j.instagram==='ok'?'publikováno':j.instagram), j.instagram==='ok'?'ok':'er');
+    if (j.facebook) status('Facebook: ' + (j.facebook==='ok'?'publikováno':j.facebook), j.facebook==='ok'?'ok':'er');
+  } catch (e) { status('Chyba: ' + e.message, 'er'); }
+  $('pub').disabled = false;
+};
+</script>
+</body>
+</html>
